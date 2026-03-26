@@ -1,0 +1,9 @@
+Django==5.2.11
+djangorestframework==3.16.1
+drf-spectacular==0.29.0
+djangorestframework-simplejwt==5.5.1
+django-autoslug==1.9.9
+python-slugify==8.0.4
+Pillow==12.1.1
+PyYAML==6.0.3
+jsonschema==4.26.0

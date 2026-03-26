@@ -1,0 +1,10 @@
+.idea/
+.venv/
+.venv312/
+.packages/
+.tmp/
+__pycache__/
+*.py[cod]
+db.sqlite3
+media/
+.DS_Store
