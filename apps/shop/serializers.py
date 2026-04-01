@@ -36,3 +36,23 @@ class CreateProductSerializer(serializers.Serializer):
     image1 = serializers.ImageField()
     image2 = serializers.ImageField(required=False)
     image3 = serializers.ImageField(required=False)
+
+
+class OrderItemProductSerializer(serializers.Serializer):
+    seller = SellerShopSerializer()
+    name = serializers.CharField()
+    slug = serializers.SlugField()
+    price = serializers.DecimalField(
+        max_digits=10, decimal_places=2, source="price_current"
+    )
+
+
+class OrderItemSerializer(serializers.Serializer):
+    product = OrderItemProductSerializer()
+    quantity = serializers.IntegerField()
+    total = serializers.DecimalField(max_digits=10, decimal_places=2, source="get_total")
+
+
+class ToggleCartItemSerializer(serializers.Serializer):
+    slug = serializers.SlugField()
+    quantity = serializers.IntegerField(min_value=0)

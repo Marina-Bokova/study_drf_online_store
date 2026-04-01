@@ -2,9 +2,10 @@ from drf_spectacular.utils import extend_schema
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.profiles.models import OrderItem
 from apps.sellers.models import Seller
 from apps.shop.models import Category, Product
-from apps.shop.serializers import CategorySerializer, ProductSerializer
+from apps.shop.serializers import CategorySerializer, OrderItemSerializer, ProductSerializer, ToggleCartItemSerializer
 
 tags = ["Shop"]
 
@@ -121,3 +122,69 @@ class ProductView(APIView):
 
         serializer = self.serializer_class(product)
         return Response(data=serializer.data, status=200)
+
+
+class CartView(APIView):
+    serializer_class = OrderItemSerializer
+
+    @extend_schema(
+        summary="Получение товаров в корзине",
+        description="""
+        Возвращает все товары в корзине текущего пользователя.
+        """,
+        tags=tags,
+        responses=OrderItemSerializer,
+    )
+    def get(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return Response(data={"message": "Доступ запрещен."}, status=403)
+
+        cart_items = OrderItem.objects.select_related(
+            "product", "product__seller", "product__seller__user"
+        ).filter(user=request.user, order__isnull=True)
+        serializer = self.serializer_class(cart_items, many=True)
+        return Response(data=serializer.data, status=200)
+
+    @extend_schema(
+        summary="Добавление, обновление и удаление товара в корзине",
+        description="""
+        Добавляет товар в корзину, обновляет его количество или удаляет товар
+        Если quantity равно 0, то товар удаляется автоматически.
+        """,
+        tags=tags,
+        request=ToggleCartItemSerializer,
+        responses=OrderItemSerializer,
+    )
+    def post(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return Response(data={"message": "Доступ запрещен."}, status=403)
+
+        serializer = ToggleCartItemSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        quantity = data["quantity"]
+
+        product = Product.objects.select_related("seller", "seller__user").get_or_none(slug=data["slug"])
+        if not product:
+            return Response(data={"message": "Товар не найден."}, status=404)
+
+        orderitem, created = OrderItem.objects.update_or_create(
+            user=request.user,
+            order=None,
+            product=product,
+            defaults={"quantity": quantity},
+        )
+
+        resp_message_substring = "Updated In"
+        status_code = 200
+        if created:
+            status_code = 201
+            resp_message_substring = "Added To"
+        if orderitem.quantity == 0:
+            resp_message_substring = "Removed From"
+            orderitem.delete()
+            data = None
+        if resp_message_substring != "Removed From":
+            serializer = self.serializer_class(orderitem)
+            data = serializer.data
+        return Response(data={"message": f"Item {resp_message_substring} Cart", "item": data}, status=status_code)
