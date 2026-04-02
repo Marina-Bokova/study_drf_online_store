@@ -102,6 +102,17 @@ class Order(BaseModel):
             self.tx_ref = generate_unique_code(Order, "tx_ref")
         super().save(*args, **kwargs)
 
+    @property
+    def get_cart_subtotal(self):
+        order_items = self.orderitems.all()
+        total = sum([item.get_total for item in order_items])
+        return total
+
+    @property
+    def get_cart_total(self):
+        total = self.get_cart_subtotal
+        return total
+
 
 class OrderItem(BaseModel):
     """

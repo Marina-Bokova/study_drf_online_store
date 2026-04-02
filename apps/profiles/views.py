@@ -6,8 +6,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.common.utils import set_dict_attr
-from apps.profiles.models import ShippingAddress
+from apps.profiles.models import ShippingAddress, Order, OrderItem
 from apps.profiles.serializers import ProfileSerializer, ShippingAddressSerializer
+from apps.shop.serializers import OrderSerializer, CheckItemOrderSerializer
 
 tags = ["Profiles"]
 
@@ -105,6 +106,7 @@ class ShippingAddressViewID(APIView):
         if shipping_address is None:
             raise NotFound(detail={"message": "Адрес доставки с указанным ID не существует"}, code=404)
 
+        self.check_object_permissions(self.request, shipping_address)
         return shipping_address
 
     @extend_schema(
@@ -150,3 +152,46 @@ class ShippingAddressViewID(APIView):
         shipping_address = self.get_object(user, kwargs["id"])
         shipping_address.delete()
         return Response(data={"message": "Адрес доставки успешно удален."}, status=200)
+
+
+class OrdersView(APIView):
+    serializer_class = OrderSerializer
+
+    @extend_schema(
+        operation_id="orders_view",
+        summary="Получение заказов",
+        description="""
+        Возвращает все заказы для конкретного пользователя
+        """,
+        tags=tags
+    )
+    def get(self, request):
+        user = request.user
+        orders = (Order.objects.filter(user=user)
+                  .prefetch_related("orderitems", "orderitems__product")
+                  .order_by("-created_at"))
+        serializer = self.serializer_class(orders, many=True)
+        return Response(data=serializer.data, status=200)
+
+
+class OrderItemsView(APIView):
+    serializer_class = CheckItemOrderSerializer
+
+    @extend_schema(
+        operation_id="order_items_view",
+        summary="Получение товаров в заказе",
+        description="""
+            Возвращает все заказанные товары для конкретного пользователя
+        """,
+        tags=tags,
+
+    )
+    def get(self, request, **kwargs):
+        order = Order.objects.get_or_none(tx_ref=kwargs["tx_ref"])
+        if not order or order.user != request.user:
+            return Response(data={"message": "Заказ не существует!"}, status=404)
+        order_items = OrderItem.objects.filter(order=order).select_related(
+            "product", "product__seller", "product__seller__user"
+        )
+        serializer = self.serializer_class(order_items, many=True)
+        return Response(data=serializer.data, status=200)

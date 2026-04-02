@@ -1,11 +1,19 @@
+from django.db import transaction
 from drf_spectacular.utils import extend_schema
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.profiles.models import OrderItem
+from apps.profiles.models import Order, OrderItem, ShippingAddress
 from apps.sellers.models import Seller
 from apps.shop.models import Category, Product
-from apps.shop.serializers import CategorySerializer, OrderItemSerializer, ProductSerializer, ToggleCartItemSerializer
+from apps.shop.serializers import (
+    CategorySerializer,
+    CheckoutSerializer,
+    OrderItemSerializer,
+    OrderSerializer,
+    ProductSerializer,
+    ToggleCartItemSerializer,
+)
 
 tags = ["Shop"]
 
@@ -136,9 +144,6 @@ class CartView(APIView):
         responses=OrderItemSerializer,
     )
     def get(self, request, *args, **kwargs):
-        if not request.user.is_authenticated:
-            return Response(data={"message": "Доступ запрещен."}, status=403)
-
         cart_items = OrderItem.objects.select_related(
             "product", "product__seller", "product__seller__user"
         ).filter(user=request.user, order__isnull=True)
@@ -156,9 +161,6 @@ class CartView(APIView):
         responses=OrderItemSerializer,
     )
     def post(self, request, *args, **kwargs):
-        if not request.user.is_authenticated:
-            return Response(data={"message": "Доступ запрещен."}, status=403)
-
         serializer = ToggleCartItemSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
@@ -175,16 +177,66 @@ class CartView(APIView):
             defaults={"quantity": quantity},
         )
 
-        resp_message_substring = "Updated In"
+        resp_message_substring = "в корзине обновлен"
         status_code = 200
         if created:
             status_code = 201
-            resp_message_substring = "Added To"
+            resp_message_substring = "добавлен в корзину"
         if orderitem.quantity == 0:
-            resp_message_substring = "Removed From"
+            resp_message_substring = "удален из корзины"
             orderitem.delete()
             data = None
-        if resp_message_substring != "Removed From":
+        if resp_message_substring != "удален из корзины":
             serializer = self.serializer_class(orderitem)
             data = serializer.data
-        return Response(data={"message": f"Item {resp_message_substring} Cart", "item": data}, status=status_code)
+        return Response(data={"message": f"Товар {resp_message_substring}", "item": data}, status=status_code)
+
+
+class CheckoutView(APIView):
+    serializer_class = CheckoutSerializer
+
+    @extend_schema(
+        summary="Создание заказа",
+        description="""
+        Создает заказ из текущей корзины пользователя и выбранного адреса доставки.
+        """,
+        tags=tags,
+        request=CheckoutSerializer,
+        responses=OrderSerializer,
+    )
+    def post(self, request, *args, **kwargs):
+        serializer = self.serializer_class(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        cart_items = OrderItem.objects.filter(user=request.user, order__isnull=True)
+        if not cart_items.exists():
+            return Response(data={"message": "Корзина пуста."}, status=400)
+
+        serializer = self.serializer_class(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        shipping_id = data.get("shipping_id")
+        # Получаем информацию о доставке на основе идентификатора доставки, введенного пользователем.
+        shipping = ShippingAddress.objects.get_or_none(id=shipping_id)
+        if not shipping:
+            return Response({"message": "No shipping address with that ID"}, status=404)
+
+        fields_to_update = [
+            "full_name",
+            "email",
+            "phone",
+            "address",
+            "city",
+            "country",
+            "zipcode",
+        ]
+        data = {}
+        for field in fields_to_update:
+            value = getattr(shipping, field)
+            data[field] = value
+
+        order = Order.objects.create(user=request.user, **data)
+        cart_items.update(order=order)
+
+        serializer = OrderSerializer(order)
+        return Response(data={"message": "Заказ успешно оформлен", "item": serializer.data}, status=201)
