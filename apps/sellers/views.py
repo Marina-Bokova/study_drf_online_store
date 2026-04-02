@@ -2,6 +2,7 @@ from drf_spectacular.utils import extend_schema
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.common.permissions import IsSeller
 from apps.common.utils import set_dict_attr
 from apps.profiles.models import Order, OrderItem
 from apps.sellers.models import Seller
@@ -38,6 +39,7 @@ class SellersView(APIView):
 
 class SellerProductsView(APIView):
     serializer_class = ProductSerializer
+    permission_classes = [IsSeller]
 
     @extend_schema(
         summary="Получение товаров продавца",
@@ -86,6 +88,7 @@ class SellerProductsView(APIView):
 
 class SellerProductView(APIView):
     serializer_class = CreateProductSerializer
+    permission_classes = [IsSeller]
 
     def get_object(self, slug):
         product = Product.objects.get_or_none(slug=slug)
@@ -104,6 +107,7 @@ class SellerProductView(APIView):
         product = self.get_object(kwargs['slug'])
         if not product:
             return Response(data={"message": "Товар не найден."}, status=404)
+        self.check_object_permissions(request, product)
         if not product.seller or product.seller.user != request.user:
             return Response(data={"message": "Доступ запрещен."}, status=403)
 
@@ -138,6 +142,7 @@ class SellerProductView(APIView):
         product = self.get_object(kwargs['slug'])
         if not product:
             return Response(data={"message": "Товар не найден."}, status=404)
+        self.check_object_permissions(request, product)
         if not product.seller or product.seller.user != request.user:
             return Response(data={"message": "Доступ запрещен."}, status=403)
         product.delete()
@@ -146,6 +151,7 @@ class SellerProductView(APIView):
 
 class SellerOrdersView(APIView):
     serializer_class = OrderSerializer
+    permission_classes = [IsSeller]
 
     @extend_schema(
         operation_id="seller_orders_view",
@@ -169,6 +175,7 @@ class SellerOrdersView(APIView):
 
 class SellerOrderItemsView(APIView):
     serializer_class = CheckItemOrderSerializer
+    permission_classes = [IsSeller]
 
     @extend_schema(
         operation_id="seller_order_items_view",

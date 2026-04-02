@@ -2,9 +2,11 @@ from uuid import UUID
 
 from drf_spectacular.utils import extend_schema
 from rest_framework.exceptions import ValidationError, NotFound
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.common.permissions import IsOwnerOrAdmin
 from apps.common.utils import set_dict_attr
 from apps.profiles.models import ShippingAddress, Order, OrderItem
 from apps.profiles.serializers import ProfileSerializer, ShippingAddressSerializer
@@ -15,6 +17,7 @@ tags = ["Profiles"]
 
 class ProfileView(APIView):
     serializer_class = ProfileSerializer
+    permission_classes = [IsAuthenticated]
 
     @extend_schema(
         summary="Получение профиля",
@@ -24,8 +27,7 @@ class ProfileView(APIView):
         tags=tags,
     )
     def get(self, request):
-        user = request.user
-        serializer = self.serializer_class(user)
+        serializer = self.serializer_class(request.user)
         return Response(data=serializer.data, status=200)
 
     @extend_schema(
@@ -61,6 +63,7 @@ class ProfileView(APIView):
 
 class ShippingAddressesView(APIView):
     serializer_class = ShippingAddressSerializer
+    permission_classes = [IsOwnerOrAdmin]
 
     @extend_schema(
         summary="Получение адресов доставки",
@@ -95,6 +98,7 @@ class ShippingAddressesView(APIView):
 
 class ShippingAddressViewID(APIView):
     serializer_class = ShippingAddressSerializer
+    permission_classes = [IsOwnerOrAdmin]
 
     def get_object(self, user, shipping_id):
         try:
@@ -156,6 +160,7 @@ class ShippingAddressViewID(APIView):
 
 class OrdersView(APIView):
     serializer_class = OrderSerializer
+    permission_classes = [IsOwnerOrAdmin]
 
     @extend_schema(
         operation_id="orders_view",
@@ -170,12 +175,15 @@ class OrdersView(APIView):
         orders = (Order.objects.filter(user=user)
                   .prefetch_related("orderitems", "orderitems__product")
                   .order_by("-created_at"))
+        for order in orders:
+            self.check_object_permissions(request, order)
         serializer = self.serializer_class(orders, many=True)
         return Response(data=serializer.data, status=200)
 
 
 class OrderItemsView(APIView):
     serializer_class = CheckItemOrderSerializer
+    permission_classes = [IsOwnerOrAdmin]
 
     @extend_schema(
         operation_id="order_items_view",
@@ -190,6 +198,7 @@ class OrderItemsView(APIView):
         order = Order.objects.get_or_none(tx_ref=kwargs["tx_ref"])
         if not order or order.user != request.user:
             return Response(data={"message": "Заказ не существует!"}, status=404)
+        self.check_object_permissions(request, order)
         order_items = OrderItem.objects.filter(order=order).select_related(
             "product", "product__seller", "product__seller__user"
         )

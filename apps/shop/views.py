@@ -1,8 +1,8 @@
-from django.db import transaction
 from drf_spectacular.utils import extend_schema
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.common.permissions import IsAdminOnly, IsOwnerOrAdmin
 from apps.profiles.models import Order, OrderItem, ShippingAddress
 from apps.sellers.models import Seller
 from apps.shop.models import Category, Product
@@ -20,6 +20,7 @@ tags = ["Shop"]
 
 class CategoriesView(APIView):
     serializer_class = CategorySerializer
+    permission_classes = [IsAdminOnly]
 
     @extend_schema(
         summary="Получение категории",
@@ -134,6 +135,7 @@ class ProductView(APIView):
 
 class CartView(APIView):
     serializer_class = OrderItemSerializer
+    permission_classes = [IsOwnerOrAdmin]
 
     @extend_schema(
         summary="Получение товаров в корзине",
@@ -194,6 +196,7 @@ class CartView(APIView):
 
 class CheckoutView(APIView):
     serializer_class = CheckoutSerializer
+    permission_classes = [IsOwnerOrAdmin]
 
     @extend_schema(
         summary="Создание заказа",
