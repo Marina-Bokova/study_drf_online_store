@@ -1,11 +1,15 @@
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import extend_schema, OpenApiParameter
+from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.common.permissions import IsAdminOnly, IsOwnerOrAdmin
 from apps.profiles.models import Order, OrderItem, ShippingAddress
 from apps.sellers.models import Seller
+from apps.shop.filters import ProductFilter
 from apps.shop.models import Category, Product
+from apps.shop.schema_examples import PRODUCT_PARAM_EXAMPLE
 from apps.shop.serializers import (
     CategorySerializer,
     CheckoutSerializer,
@@ -32,7 +36,7 @@ class CategoriesView(APIView):
     def get(self, request, *args, **kwargs):
         categories = Category.objects.all()
         serializer = self.serializer_class(categories, many=True)
-        return Response(data=serializer.data, status=200)
+        return Response(data=serializer.data, status=status.HTTP_200_OK)
 
     @extend_schema(
         summary="Создание категории",
@@ -46,9 +50,9 @@ class CategoriesView(APIView):
         if serializer.is_valid():
             new_cat = Category.objects.create(**serializer.validated_data)
             serializer = self.serializer_class(new_cat)
-            return Response(serializer.data, status=201)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
         else:
-            return Response(serializer.errors, status=400)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class ProductsByCategoryView(APIView):
@@ -65,11 +69,11 @@ class ProductsByCategoryView(APIView):
     def get(self, request, *args, **kwargs):
         category = Category.objects.get_or_none(slug=kwargs["slug"])
         if not category:
-            return Response(data={"message": "Категория не найдена."}, status=404)
+            return Response(data={"message": "Категория не найдена."}, status=status.HTTP_404_NOT_FOUND)
 
         products = Product.objects.select_related("category", "seller", "seller__user").filter(category=category)
         serializer = self.serializer_class(products, many=True)
-        return Response(data=serializer.data, status=200)
+        return Response(data=serializer.data, status=status.HTTP_200_OK)
 
 
 class ProductsView(APIView):
@@ -81,12 +85,19 @@ class ProductsView(APIView):
         description="""
         Возвращает все товары интернет-магазина.
         """,
-        tags=tags
+        tags=tags,
+        parameters=PRODUCT_PARAM_EXAMPLE,
     )
     def get(self, request, *args, **kwargs):
         products = Product.objects.select_related("category", "seller", "seller__user").all()
-        serializer = self.serializer_class(products, many=True)
-        return Response(data=serializer.data, status=200)
+
+        filterset = ProductFilter(request.query_params, queryset=products)
+        if filterset.is_valid():
+            queryset = filterset.qs
+            serializer = self.serializer_class(queryset, many=True)
+            return Response(data=serializer.data, status=status.HTTP_200_OK)
+        else:
+            return Response(filterset.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class ProductsBySellerView(APIView):
@@ -102,11 +113,11 @@ class ProductsBySellerView(APIView):
     def get(self, request, *args, **kwargs):
         seller = Seller.objects.get_or_none(slug=kwargs["slug"])
         if not seller:
-            return Response(data={"message": "Продавец не найден."}, status=404)
+            return Response(data={"message": "Продавец не найден."}, status=status.HTTP_404_NOT_FOUND)
 
         products = Product.objects.select_related("category", "seller", "seller__user").filter(seller=seller)
         serializer = self.serializer_class(products, many=True)
-        return Response(data=serializer.data, status=200)
+        return Response(data=serializer.data, status=status.HTTP_200_OK)
 
 
 class ProductView(APIView):
@@ -127,10 +138,10 @@ class ProductView(APIView):
     def get(self, request, *args, **kwargs):
         product = self.get_object(kwargs['slug'])
         if not product:
-            return Response(data={"message": "Товар не найден."}, status=404)
+            return Response(data={"message": "Товар не найден."}, status=status.HTTP_404_NOT_FOUND)
 
         serializer = self.serializer_class(product)
-        return Response(data=serializer.data, status=200)
+        return Response(data=serializer.data, status=status.HTTP_200_OK)
 
 
 class CartView(APIView):
@@ -150,7 +161,7 @@ class CartView(APIView):
             "product", "product__seller", "product__seller__user"
         ).filter(user=request.user, order__isnull=True)
         serializer = self.serializer_class(cart_items, many=True)
-        return Response(data=serializer.data, status=200)
+        return Response(data=serializer.data, status=status.HTTP_200_OK)
 
     @extend_schema(
         summary="Добавление, обновление и удаление товара в корзине",
@@ -170,7 +181,7 @@ class CartView(APIView):
 
         product = Product.objects.select_related("seller", "seller__user").get_or_none(slug=data["slug"])
         if not product:
-            return Response(data={"message": "Товар не найден."}, status=404)
+            return Response(data={"message": "Товар не найден."}, status=status.HTTP_404_NOT_FOUND)
 
         orderitem, created = OrderItem.objects.update_or_create(
             user=request.user,
@@ -180,9 +191,9 @@ class CartView(APIView):
         )
 
         resp_message_substring = "в корзине обновлен"
-        status_code = 200
+        status_code = status.HTTP_200_OK
         if created:
-            status_code = 201
+            status_code = status.HTTP_201_CREATED
             resp_message_substring = "добавлен в корзину"
         if orderitem.quantity == 0:
             resp_message_substring = "удален из корзины"
@@ -213,7 +224,7 @@ class CheckoutView(APIView):
 
         cart_items = OrderItem.objects.filter(user=request.user, order__isnull=True)
         if not cart_items.exists():
-            return Response(data={"message": "Корзина пуста."}, status=400)
+            return Response(data={"message": "Корзина пуста."}, status=status.HTTP_400_BAD_REQUEST)
 
         serializer = self.serializer_class(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -222,7 +233,7 @@ class CheckoutView(APIView):
         # Получаем информацию о доставке на основе идентификатора доставки, введенного пользователем.
         shipping = ShippingAddress.objects.get_or_none(id=shipping_id)
         if not shipping:
-            return Response({"message": "No shipping address with that ID"}, status=404)
+            return Response({"message": "No shipping address with that ID"}, status=status.HTTP_404_NOT_FOUND)
 
         fields_to_update = [
             "full_name",
@@ -242,4 +253,4 @@ class CheckoutView(APIView):
         cart_items.update(order=order)
 
         serializer = OrderSerializer(order)
-        return Response(data={"message": "Заказ успешно оформлен", "item": serializer.data}, status=201)
+        return Response(data={"message": "Заказ успешно оформлен", "item": serializer.data}, status=status.HTTP_201_CREATED)
