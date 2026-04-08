@@ -1,9 +1,9 @@
-from drf_spectacular.types import OpenApiTypes
-from drf_spectacular.utils import extend_schema, OpenApiParameter
+from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.common.paginations import CustomPagination
 from apps.common.permissions import IsAdminOnly, IsOwnerOrAdmin
 from apps.profiles.models import Order, OrderItem, ShippingAddress
 from apps.sellers.models import Seller
@@ -78,6 +78,7 @@ class ProductsByCategoryView(APIView):
 
 class ProductsView(APIView):
     serializer_class = ProductSerializer
+    pagination_class = CustomPagination
 
     @extend_schema(
         operation_id="all_products",
@@ -91,11 +92,13 @@ class ProductsView(APIView):
     def get(self, request, *args, **kwargs):
         products = Product.objects.select_related("category", "seller", "seller__user").all()
 
-        filterset = ProductFilter(request.query_params, queryset=products)
+        filterset = ProductFilter(request.GET, queryset=products)
         if filterset.is_valid():
             queryset = filterset.qs
-            serializer = self.serializer_class(queryset, many=True)
-            return Response(data=serializer.data, status=status.HTTP_200_OK)
+            paginator = self.pagination_class()
+            paginated_queryset = paginator.paginate_queryset(queryset, request)
+            serializer = self.serializer_class(paginated_queryset, many=True)
+            return paginator.get_paginated_response(serializer.data)
         else:
             return Response(filterset.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -253,4 +256,5 @@ class CheckoutView(APIView):
         cart_items.update(order=order)
 
         serializer = OrderSerializer(order)
-        return Response(data={"message": "Заказ успешно оформлен", "item": serializer.data}, status=status.HTTP_201_CREATED)
+        return Response(data={"message": "Заказ успешно оформлен", "item": serializer.data},
+                        status=status.HTTP_201_CREATED)

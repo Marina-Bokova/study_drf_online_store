@@ -23,6 +23,7 @@ class BaseModel(models.Model):
     objects = GetOrNoneManager()
 
     class Meta:
+        ordering = ['-created_at', 'id']
         abstract = True
 
 
