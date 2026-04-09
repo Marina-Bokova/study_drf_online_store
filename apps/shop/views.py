@@ -1,14 +1,16 @@
+from django.db.models import Avg, Q
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.common.paginations import CustomPagination
-from apps.common.permissions import IsAdminOnly, IsOwnerOrAdmin
+from apps.common.permissions import IsAdminOnly, IsOwnerOrAdmin, IsBuyer
+from apps.common.utils import set_dict_attr
 from apps.profiles.models import Order, OrderItem, ShippingAddress
 from apps.sellers.models import Seller
 from apps.shop.filters import ProductFilter
-from apps.shop.models import Category, Product
+from apps.shop.models import Category, Product, Review
 from apps.shop.schema_examples import PRODUCT_PARAM_EXAMPLE
 from apps.shop.serializers import (
     CategorySerializer,
@@ -16,10 +18,18 @@ from apps.shop.serializers import (
     OrderItemSerializer,
     OrderSerializer,
     ProductSerializer,
+    ReviewCreateUpdateSerializer,
+    ReviewSerializer,
     ToggleCartItemSerializer,
 )
 
 tags = ["Shop"]
+
+
+def annotate_avg_rating(queryset):
+    return queryset.annotate(
+        avg_rating=Avg("reviews__rating", filter=Q(reviews__is_deleted=False))
+    )
 
 
 class CategoriesView(APIView):
@@ -71,7 +81,9 @@ class ProductsByCategoryView(APIView):
         if not category:
             return Response(data={"message": "Категория не найдена."}, status=status.HTTP_404_NOT_FOUND)
 
-        products = Product.objects.select_related("category", "seller", "seller__user").filter(category=category)
+        products = annotate_avg_rating(
+            Product.objects.select_related("category", "seller", "seller__user").filter(category=category)
+        )
         serializer = self.serializer_class(products, many=True)
         return Response(data=serializer.data, status=status.HTTP_200_OK)
 
@@ -90,7 +102,9 @@ class ProductsView(APIView):
         parameters=PRODUCT_PARAM_EXAMPLE,
     )
     def get(self, request, *args, **kwargs):
-        products = Product.objects.select_related("category", "seller", "seller__user").all()
+        products = annotate_avg_rating(
+            Product.objects.select_related("category", "seller", "seller__user").all()
+        )
 
         filterset = ProductFilter(request.GET, queryset=products)
         if filterset.is_valid():
@@ -118,7 +132,9 @@ class ProductsBySellerView(APIView):
         if not seller:
             return Response(data={"message": "Продавец не найден."}, status=status.HTTP_404_NOT_FOUND)
 
-        products = Product.objects.select_related("category", "seller", "seller__user").filter(seller=seller)
+        products = annotate_avg_rating(
+            Product.objects.select_related("category", "seller", "seller__user").filter(seller=seller)
+        )
         serializer = self.serializer_class(products, many=True)
         return Response(data=serializer.data, status=status.HTTP_200_OK)
 
@@ -127,7 +143,9 @@ class ProductView(APIView):
     serializer_class = ProductSerializer
 
     def get_object(self, slug):
-        product = Product.objects.get_or_none(slug=slug)
+        product = annotate_avg_rating(
+            Product.objects.select_related("category", "seller", "seller__user")
+        ).get_or_none(slug=slug)
         return product
 
     @extend_schema(
@@ -145,6 +163,106 @@ class ProductView(APIView):
 
         serializer = self.serializer_class(product)
         return Response(data=serializer.data, status=status.HTTP_200_OK)
+
+
+class ProductReviewsView(APIView):
+    serializer_class = ReviewSerializer
+    permission_classes = [IsBuyer]
+
+    def get_product(self, slug):
+        return Product.objects.get_or_none(slug=slug)
+
+    @extend_schema(
+        summary="Получение отзывов о товаре",
+        description="""
+        Возвращает все отзывы, оставленные к товару по его slug.
+        """,
+        tags=tags,
+        responses=ReviewSerializer,
+    )
+    def get(self, request, *args, **kwargs):
+        product = self.get_product(kwargs["slug"])
+        if not product:
+            return Response(data={"message": "Товар не найден."}, status=status.HTTP_404_NOT_FOUND)
+
+        reviews = Review.objects.select_related("user").filter(product=product)
+        serializer = self.serializer_class(reviews, many=True)
+        return Response(data=serializer.data, status=status.HTTP_200_OK)
+
+    @extend_schema(
+        summary="Создание отзыва о товаре",
+        description="""
+        Позволяет авторизованному пользователю оставить один отзыв на товар.
+        """,
+        tags=tags,
+        request=ReviewCreateUpdateSerializer,
+        responses=ReviewSerializer,
+    )
+    def post(self, request, *args, **kwargs):
+        product = self.get_product(kwargs["slug"])
+        if not product:
+            return Response(data={"message": "Товар не найден."}, status=status.HTTP_404_NOT_FOUND)
+
+        if Review.objects.filter(user=request.user, product=product).exists():
+            return Response(
+                data={"message": "Вы уже оставили отзыв на этот товар"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = ReviewCreateUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        review = Review.objects.create(user=request.user, product=product, **serializer.validated_data)
+        response_serializer = self.serializer_class(review)
+        return Response(data=response_serializer.data, status=status.HTTP_201_CREATED)
+
+
+class ReviewDetailView(APIView):
+    serializer_class = ReviewSerializer
+    permission_classes = [IsOwnerOrAdmin]
+
+    def get_object(self, request, review_id):
+        review = Review.objects.select_related("user", "product").get_or_none(id=review_id)
+        if not review:
+            return None
+        self.check_object_permissions(request, review)
+        return review
+
+    @extend_schema(
+        summary="Изменение отзыва",
+        description="""
+        Позволяет владельцу или администратору изменить отзыв.
+        """,
+        tags=tags,
+        request=ReviewCreateUpdateSerializer,
+        responses=ReviewSerializer,
+    )
+    def put(self, request, *args, **kwargs):
+        review = self.get_object(request, kwargs["id"])
+        if not review:
+            return Response(data={"message": "Отзыв не найден."}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = ReviewCreateUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        review = set_dict_attr(review, serializer.validated_data)
+        review.save()
+        response_serializer = self.serializer_class(review)
+        return Response(data=response_serializer.data, status=status.HTTP_200_OK)
+
+    @extend_schema(
+        summary="Удаление отзыва",
+        description="""
+        Позволяет владельцу или администратору удалить отзыв.
+        """,
+        tags=tags,
+    )
+    def delete(self, request, *args, **kwargs):
+        review = self.get_object(request, kwargs["id"])
+        if not review:
+            return Response(data={"message": "Отзыв не найден."}, status=status.HTTP_404_NOT_FOUND)
+
+        review.delete()
+        return Response(data={"message": "Отзыв успешно удален."}, status=status.HTTP_200_OK)
 
 
 class CartView(APIView):

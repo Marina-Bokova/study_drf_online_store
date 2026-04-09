@@ -2,6 +2,7 @@ from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from apps.profiles.serializers import ShippingAddressSerializer
+from apps.shop.models import Review
 
 
 class CategorySerializer(serializers.Serializer):
@@ -28,6 +29,25 @@ class ProductSerializer(serializers.Serializer):
     image1 = serializers.ImageField()
     image2 = serializers.ImageField(required=False)
     image3 = serializers.ImageField(required=False)
+    avg_rating = serializers.FloatField(read_only=True, allow_null=True)
+
+
+class ReviewUserSerializer(serializers.Serializer):
+    id = serializers.UUIDField(read_only=True)
+    first_name = serializers.CharField()
+    last_name = serializers.CharField()
+
+
+class ReviewSerializer(serializers.Serializer):
+    id = serializers.UUIDField(read_only=True)
+    user = ReviewUserSerializer(read_only=True)
+    rating = serializers.IntegerField()
+    text = serializers.CharField()
+
+
+class ReviewCreateUpdateSerializer(serializers.Serializer):
+    rating = serializers.ChoiceField(choices=Review._meta.get_field("rating").choices)
+    text = serializers.CharField()
 
 
 class CreateProductSerializer(serializers.Serializer):

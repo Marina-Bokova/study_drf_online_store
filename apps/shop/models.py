@@ -2,8 +2,18 @@ from autoslug import AutoSlugField
 from django.db import models
 from slugify import slugify
 
+from apps.accounts.models import User
 from apps.common.models import BaseModel, IsDeletedModel
 from apps.sellers.models import Seller
+
+
+RATING_CHOICES = (
+    (1, 1),
+    (2, 2),
+    (3, 3),
+    (4, 4),
+    (5, 5),
+)
 
 
 class Category(BaseModel):
@@ -47,7 +57,6 @@ class Product(IsDeletedModel):
         image2 (ImageField): Второе изображение товара
         image3 (ImageField): Третье изображение товара
 
-
     Methods:
         __str__(): Возвращает строковое представление объекта Product
     """
@@ -66,6 +75,38 @@ class Product(IsDeletedModel):
     image2 = models.ImageField(upload_to='product_images/', blank=True)
     image3 = models.ImageField(upload_to='product_images/', blank=True)
 
-
     def __str__(self):
         return self.name
+
+
+class Review(IsDeletedModel):
+    """
+    Комментарий пользователя к товару
+
+    Attributes:
+        user (ForeignKey): Пользователь, оставляющий комментарий
+        product (ForeignKey): Товар, к которому оставляют отзыв
+        rating (int): оценка товара по 5-бальной шкале
+        text (str): Текстовый комментарий к товару
+
+    Methods:
+        __str__(): Возвращает строковое представление объекта Review
+    """
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="reviews")
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="reviews")
+    rating = models.IntegerField(choices=RATING_CHOICES)
+    text = models.TextField()
+
+    def __str__(self):
+        return f"{self.user} - {self.product} ({self.rating})"
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "product"],
+                condition=models.Q(is_deleted=False),
+                name="unique_user_product_review",
+            )
+        ]
+
