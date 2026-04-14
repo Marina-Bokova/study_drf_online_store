@@ -352,7 +352,7 @@ class CheckoutView(APIView):
         data = serializer.validated_data
         shipping_id = data.get("shipping_id")
         # Получаем информацию о доставке на основе идентификатора доставки, введенного пользователем.
-        shipping = ShippingAddress.objects.get_or_none(id=shipping_id)
+        shipping = ShippingAddress.objects.get_or_none(id=shipping_id, user=request.user)
         if not shipping:
             return Response({"message": "No shipping address with that ID"}, status=status.HTTP_404_NOT_FOUND)
 
