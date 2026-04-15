@@ -29,7 +29,7 @@ class User(IsDeletedModel, AbstractBaseUser):
         __str__(): Возвращает строковое представление пользователя
     """
 
-    first_name = models.CharField(verbose_name="Имя", max_length=25, null=True)
+    first_name = models.CharField(verbose_name="Имя", max_length=25, null=True, blank=True)
     last_name = models.CharField(verbose_name="Фамилия", max_length=25, null=True)
     email = models.EmailField(verbose_name="Email адрес", unique=True)
     avatar = models.ImageField(upload_to="avatars/", null=True, default='avatars/default.jpg')

@@ -163,6 +163,38 @@ class ProductReviewsApiTests(ShopBaseTestCase):
         self.assertTrue(review.is_deleted)
 
 
+class ProductsApiTests(ShopBaseTestCase):
+    def test_products_list_returns_paginated_products(self):
+        response = self.client.get("/shop/products/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("results", response.data)
+        self.assertEqual(len(response.data["results"]), 1)
+        self.assertEqual(response.data["results"][0]["slug"], self.product.slug)
+        self.assertIsNone(response.data["results"][0]["avg_rating"])
+
+    def test_product_detail_returns_product(self):
+        response = self.client.get(f"/shop/products/{self.product.slug}/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["slug"], self.product.slug)
+        self.assertEqual(response.data["name"], self.product.name)
+
+    def test_products_by_category_returns_products(self):
+        response = self.client.get(f"/shop/categories/{self.category.slug}/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["slug"], self.product.slug)
+
+    def test_products_by_seller_returns_products(self):
+        response = self.client.get(f"/shop/sellers/{self.seller.slug}/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["slug"], self.product.slug)
+
+
 class CartApiTests(ShopBaseTestCase):
     def test_add_product_to_cart_creates_order_item(self):
         self.client.force_authenticate(self.buyer)

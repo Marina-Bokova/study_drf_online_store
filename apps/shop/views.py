@@ -29,12 +29,11 @@ tags = ["Shop"]
 def annotate_avg_rating(queryset):
     return queryset.annotate(
         avg_rating=Avg("reviews__rating", filter=Q(reviews__is_deleted=False))
-    )
+    ).order_by("-created_at", "id")
 
 
 class CategoriesView(APIView):
     serializer_class = CategorySerializer
-    permission_classes = [IsAdminOnly]
 
     @extend_schema(
         summary="Получение категории",
@@ -56,6 +55,8 @@ class CategoriesView(APIView):
         tags=tags
     )
     def post(self, request, *args, **kwargs):
+        if not request.user.is_staff:
+            return Response(status=status.HTTP_401_UNAUTHORIZED)
         serializer = self.serializer_class(data=request.data)
         if serializer.is_valid():
             new_cat = Category.objects.create(**serializer.validated_data)

@@ -1,4 +1,5 @@
 from drf_spectacular.utils import extend_schema
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -14,12 +15,13 @@ tags = ["Sellers"]
 
 
 class SellersView(APIView):
+    permission_classes = [IsAuthenticated]
     serializer_class = SellerSerializer
 
     @extend_schema(
-        summary="Подача заявки, чтобы стать продавцом.",
+        summary="Подача заявки, чтобы стать продавцом",
         description="""
-        Позволяет покупателю подать заявку на то, чтобы стать продавцом.
+        Позволяет покупателю подать заявку на то, чтобы стать продавцом
         """,
         tags=tags)
 

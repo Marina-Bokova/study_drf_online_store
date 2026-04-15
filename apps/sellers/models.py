@@ -3,10 +3,10 @@ from django.db import models
 from slugify import slugify
 
 from apps.accounts.models import User
-from apps.common.models import BaseModel
+from apps.common.models import IsDeletedModel
 
 
-class Seller(BaseModel):
+class Seller(IsDeletedModel):
     """
     Информация о бизнесе, связанном с профилем продавца
 
