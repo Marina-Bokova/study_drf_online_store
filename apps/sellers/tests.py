@@ -1,19 +1,20 @@
 from decimal import Decimal
 from io import BytesIO
 
+from PIL import Image
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
-from PIL import Image
 from rest_framework import status
 from rest_framework.test import APIClient
 
 from apps.accounts.models import User
-from apps.profiles.models import Order, OrderItem, ShippingAddress
+from apps.common.test_utils import TempMediaRootMixin
+from apps.profiles.models import Order, OrderItem
 from apps.sellers.models import Seller
 from apps.shop.models import Category, Product
 
 
-class SellersBaseTestCase(TestCase):
+class SellersBaseTestCase(TempMediaRootMixin, TestCase):
     @staticmethod
     def make_test_image(name="test.png"):
         buffer = BytesIO()

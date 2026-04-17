@@ -8,13 +8,14 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from apps.accounts.models import User
+from apps.common.test_utils import TempMediaRootMixin
 from apps.profiles.models import Order, OrderItem, ShippingAddress
 from apps.sellers.models import Seller
 from apps.shop.models import Category, Product, Review
 from apps.shop.views import annotate_avg_rating
 
 
-class ShopBaseTestCase(TestCase):
+class ShopBaseTestCase(TempMediaRootMixin, TestCase):
     @staticmethod
     def make_test_image(name="test.png"):
         buffer = BytesIO()
